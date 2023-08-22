@@ -1,0 +1,125 @@
+---
+title: "COVID19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r importing_data}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_US.csv",  "time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_US.csv",  "time_series_covid19_deaths_global.csv")
+urls <- str_c(url_in, file_names)
+global_cases <- read_csv(urls[2], show_col_types = FALSE)
+global_deaths <- read_csv(urls[4], show_col_types = FALSE)
+US_cases <- read_csv(urls[1], show_col_types = FALSE)
+US_deaths <- read_csv(urls [3], show_col_types = FALSE)
+```
+
+```{r tidying_data}
+global_cases <- global_cases %>% 
+  pivot_longer(cols = -c('Province/State', 'Country/Region', 'Lat', 'Long'), values_to= "cases", names_to="date")
+
+global_deaths <- global_deaths %>% 
+  pivot_longer(cols = -c('Province/State', 'Country/Region', 'Lat', 'Long'), values_to= "deaths", names_to="date")
+
+US_cases <- US_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases")%>%
+  select(Admin2:cases)%>%
+  mutate(date=mdy(date))%>%
+  select(-c(Lat, Long_))
+
+US_deaths <- US_deaths %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "deaths")%>%
+  select(Admin2:deaths)%>%
+  mutate(date=mdy(date))%>%
+  select(-c(Lat, Long_))
+US_deaths <- US_deaths%>%drop_na(date)
+```
+
+```{r transform}
+library(lubridate)
+
+global <- global_cases %>%
+  full_join(global_deaths)%>%
+  rename (Country_Region = 'Country/Region', Province_State = 'Province/State')%>%
+  mutate(date=mdy(date))
+
+global <- global%>%
+  filter(global$cases >0)
+
+US <- US_cases %>%
+  full_join(US_deaths)
+
+US <- US%>%
+  filter(US$cases >0)
+```
+
+```{r US_map_cases}
+library(usmap)
+USc_map <- US%>%rename (state = 'Province_State')%>% filter(US$date == max(US$date))%>% group_by(state) %>% summarise(sum_cases=sum(cases))
+
+plot_usmap(data = USc_map, values = "sum_cases")+ 
+  scale_fill_continuous(low = "blue", high = "red", name = "Cases", label = scales::comma) + 
+  labs(title = "Total COVID19 Cases by State", subtitle = "Recording as of March, 9th 2023") +
+  theme(legend.position = "right")
+```
+
+```{r US_deaths_map}
+USd_map <- US%>%rename (state = 'Province_State')%>% filter(US$date == max(US$date))%>% group_by(state) %>% summarise(sum_deaths=sum(deaths))
+
+plot_usmap(data = USd_map, values = "sum_deaths")+ 
+  scale_fill_continuous(low = "blue", high = "red", name = "Deaths", label = scales::comma) + 
+  labs(title = "Total COVID19 Deaths by State", subtitle = "Recording as of March, 9th 2023") +
+  theme(legend.position = "right")
+```
+
+```{r world_cases_map}
+global_cases_map <- global %>%
+  filter(global$date == max(global$date))%>%
+  group_by(Country_Region,Lat,Long)%>%
+  summarise(sum_cases=sum(cases))
+
+world_coordinates <- map_data("world")
+ggplot() +
+  geom_map(
+    data = world_coordinates, map = world_coordinates,
+    aes(long, lat, map_id = region),
+    color = "black", fill= "lightblue")+
+  geom_point(
+    data = global_cases_map,
+    aes(Long, Lat, size=sum_cases, color='black', fill='pink'),
+    alpha = 1
+  )+
+  labs(title = "Total COVID19 Cases by Country/Region", subtitle = "Recording as of March, 9th 2023")+
+theme(legend.position="none")
+```
+```{r world_deaths_map}
+global_deaths_map <- global %>%
+  filter(global$date == max(global$date))%>%
+  group_by(Country_Region,Lat,Long)%>%
+  summarise(sum_deaths=sum(deaths))
+
+world_coordinates <- map_data("world")
+ggplot() +
+  geom_map(
+    data = world_coordinates, map = world_coordinates,
+    aes(long, lat, map_id = region),
+    color = "black", fill= "lightblue")+
+  geom_point(
+    data = global_deaths_map,
+    aes(Long, Lat, size=sum_deaths, color='black', fill='pink'),
+    alpha = 1
+  )+
+  labs(title = "Total COVID19 Deaths by Country/Region", subtitle = "Recording as of March, 9th 2023")+
+theme(legend.position="none")
+```
+
+```{r time_series}
+library(modeltime)
+library(timetk)
