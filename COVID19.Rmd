@@ -1,12 +1,16 @@
 ---
-title: "COVID19"
+title: "Analysis of COVID19 Data"
 output: html_document
 ---
-
+#### In this report, I analyzed global and United States COVID-19 data, mainly focusing on the number of cases and deaths. The purpose of this was to understand where COVID-19 had the largest impact, within the United States and globally. Additionally, I wanted to try and predict how the number of deaths would change over the next year as we have understood a lot more about COVID-19 and vaccinations and supplementary boosters have been spread throughout the world.
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 ```
+The following libraries are required for this report: tidyverse, lubridate, usmap, modeltime, timetk, and forecast.
 
+## Importing Data
+The data was sourced from the Johns Hopkins University GitHub repository. They have ceased tracking and updating the data on March 10th 2023. They compiled the data from various verified county, country, and regional government websites reporting their local jurisdiction's number of cases and number of deaths. 
 ```{r importing_data}
 url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
 file_names <- c("time_series_covid19_confirmed_US.csv",  "time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_US.csv",  "time_series_covid19_deaths_global.csv")
@@ -17,6 +21,8 @@ US_cases <- read_csv(urls[1], show_col_types = FALSE)
 US_deaths <- read_csv(urls [3], show_col_types = FALSE)
 ```
 
+## Tidying Data
+The data was formatted in a way that made each new day its own column, so I pivoted it to make each day a row and the columns would be the location and number of deaths or cases.
 ```{r tidying_data}
 global_cases <- global_cases %>% 
   pivot_longer(cols = -c('Province/State', 'Country/Region', 'Lat', 'Long'), values_to= "cases", names_to="date")
@@ -42,6 +48,8 @@ US_deaths <- US_deaths %>%
 US_deaths <- US_deaths%>%drop_na(date)
 ```
 
+## Transforming Data
+Then I combined the two global cases and deaths dataset as well as the United States deaths and cases datasets making sure that my variables were the appropriate type: date variable is a date.
 ```{r transform}
 library(lubridate)
 
@@ -59,7 +67,10 @@ US <- US_cases %>%
 US <- US%>%
   filter(US$cases >0)
 ```
+## Visualizations and Model
+### Map of the United States' Cases
 
+I wanted to take a look at how the number of total COVID-19 cases was distributed throughout the US. From this graph it is apparent that the most populous states are the ones with the most cases, with California having the most. However, we can see that some states like Florida have a greater number of cases than their population would suggest. 
 ```{r US_map_cases}
 library(usmap)
 USc_map <- US%>%rename (state = 'Province_State')%>% filter(US$date == max(US$date))%>% group_by(state) %>% summarise(sum_cases=sum(cases))
@@ -70,6 +81,8 @@ plot_usmap(data = USc_map, values = "sum_cases")+
   theme(legend.position = "right")
 ```
 
+### Map of the United States' Deaths
+Next, I wanted to analyze how the deaths compared to the number of cases. With this visual we can see a similar pattern with the higher population states having more deaths, but an interesting insight is that despite California having significantly more cases it has a similar number of deaths as Texas, New York, and Florida.
 ```{r US_deaths_map}
 USd_map <- US%>%rename (state = 'Province_State')%>% filter(US$date == max(US$date))%>% group_by(state) %>% summarise(sum_deaths=sum(deaths))
 
@@ -79,6 +92,8 @@ plot_usmap(data = USd_map, values = "sum_deaths")+
   theme(legend.position = "right")
 ```
 
+### Map of the World Cases
+Once I had analyzed the United States it was necessary I analyze how COVID-19 affect the world on a global scale. Here we can see the number of cases respective of the size of the circle. From this visual it seems that COVID-19 devasted the United States, Brazil, and India the hardest. Another interesting insight we can gather is how the different countries reported their numbers, whether it be by region of nationally.
 ```{r world_cases_map}
 global_cases_map <- global %>%
   filter(global$date == max(global$date))%>%
@@ -99,6 +114,9 @@ ggplot() +
   labs(title = "Total COVID19 Cases by Country/Region", subtitle = "Recording as of March, 9th 2023")+
 theme(legend.position="none")
 ```
+
+### Map of the World Deaths
+The map showing the COVID-19 deaths paints a similar story as the total number of cases, but with significantly smaller circles. We can also see a slight pattern in that many of the countries that were able to get first access to the vaccine such as the United States and China have the largest difference in diameter between their cases and deaths circles.
 ```{r world_deaths_map}
 global_deaths_map <- global %>%
   filter(global$date == max(global$date))%>%
@@ -120,6 +138,22 @@ ggplot() +
 theme(legend.position="none")
 ```
 
+## One-Year COVID Deaths ARIMA Forecast
+Finally, it was crucial to look forward and understand how COVID-19 will continue to affect us globally. With the onset of widespread vaccinations we have seen a drastic halt in the number of global deaths as can be seen with the time series graph below. From the start of the pandemic we saw a quickly growing number of deaths, but that curve has flattened over time. I used an ARIMA model to predict how the number of COVID-19 related global deaths would change over the next year and we can see that the curve is largely flat, meaning very few deaths comparitive to previous years.
 ```{r time_series}
 library(modeltime)
 library(timetk)
+library(forecast)
+global_time_deaths <- global%>%group_by(date)%>%
+  summarise(sum_deaths=sum(deaths))
+
+global_time_deaths.ts <- as.ts(global_time_deaths$sum_deaths)
+
+model_arima <- auto.arima(global_time_deaths.ts)
+
+forecast_deaths <- forecast(model_arima, h=365)
+plot(forecast_deaths)
+```
+
+## Bias and Conclusion
+Bias in the data can arise from the different way some countries and even states would report their data. For example, Governors in some states made significant efforts to try and under count the number of cases and deaths affecting their states. There were also similar reports coming from countries like Brazil or China who wanted appear like they have the situation under control touting extremely low numbers despite a very different reality. Additionally, there may be technological bias in that countries without much testing infrastructure would have a harder time testing for COVID and therefore would report a lower number of cases. Overall it was interesting to visualize the location data and understand how COVID-19 has affected the different parts of the United States as well as how it has affected the world as a whole. I hope there is some merit and accuracy to the predictive model I made to forecast the coming year as in that case COVID-19 would be much less of a looming threat as it once was. 
